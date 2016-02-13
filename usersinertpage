@@ -1,0 +1,489 @@
+<?php
+/*
+ * File: addUsersMultiAddresses/index.php
+ * Author: Jonathan Seipp
+ * Date: December 1, 2015
+ * Purpose: This file takes data copied from a CSV opened in notepad and forms it into an array, 
+ *           which is then placed in two SQL database tables. Our service provides books to client companies, who run groups of book *           clubs for their employees from our books. This form handles users. Uusers are each a single row in one table.
+ *           For this page, they also each have a unique shipping address. Another page allows for them all to have the same shipping  * *           address, which is necessary because our delivery service provider will charge us for each shipping address we send them,  * *           even if all the users have their books going to the same place. Each shipping address is a row on a separate table.
+*/
+
+//configuration and access include files removed.
+
+//initialize the session
+if (!isset($_SESSION)) {
+  session_start();
+}
+
+//if not logged in as a Zazzco person then send to login page
+if (empty($_SESSION['PBCguruId'])){ header("Location: $page/tools/login");}
+
+//Checks to see if the form has been filled out. In this file, the form posts to the same file as the form itself
+// If the form has been filled out, the Posting is set equal to variables
+if ((isset($_POST["insert"])) && ($_POST["insert"] == "createUsers")) { 
+$csv=$_POST['usercsvtext'];
+$companyId= $_POST['companyId'];
+$groupId= $_POST['groupId'];
+$planId=$_POST['planId'];
+$billingId=$_POST['billingId'];
+$managerId=$_POST['managerId'];
+$active=1;
+$isManager=0;
+$isGuru=0;
+$PBCguruId=$_POST['PBCguruId'];
+
+//csv information is broken into an array, one for each user, which is then counted to find number of users being inserted.
+function csvcount($usercsvtext)
+{
+	
+	$usercsvtext= explode ("\n", $usercsvtext);    
+	$num= count($usercsvtext)-1;
+	
+	return $num;
+}
+
+//function is executed with csv variable contents
+$num= csvcount($csv);
+
+//Explodes the array into arrays for each user.
+function csvtoarray($usercsvtext)
+{	
+	$usercsvtext= explode ("\n", $usercsvtext);    
+	$num= count($usercsvtext)-1;
+	//each user's information is broken down into an array itself
+	for ($i = 0; $i <=$num; $i++) {
+		
+		$usercsvtext[$i]= explode(",", $usercsvtext[$i]);
+	}
+	
+	return $usercsvtext;
+}
+
+//function explodes string into array for insert
+$usercsvtext=csvtoarray($csv);
+
+	//for each user actual insert into two tables is performed.
+	for ($i = 0; $i <=$num; $i++) {
+			//Insert Data into shipping table, get corresponding Id from that table.
+			if ((isset($_POST["insert"])) && ($_POST["insert"] == "createUsers")) {
+				//shipping variables
+				$shippingDescript= $usercsvtext[$i][6];
+				$companyId= $companyId;
+				$ShippingName1= $usercsvtext[$i][7];
+				$shippingname2= $usercsvtext[$i][8];
+				$addr1= $usercsvtext[$i][9];
+				$addr2= $usercsvtext[$i][10];
+				$city= $usercsvtext[$i][11];
+				$state= $usercsvtext[$i][12];
+				$zip= $usercsvtext[$i][13];
+				
+				//user variables, not shippingId
+				$email= $usercsvtext[$i][1];
+				$salt='$6$'.mt_rand(10000000, 99999999);
+				$hash=crypt($thePassword, $salt); 
+				$firstName= $usercsvtext[$i][3];
+				$lastName= $usercsvtext[$i][4];
+				$companyId= $companyId;
+				$groupId= $groupId;
+				$planId= $planId;
+				$billingId=$billingId;
+				$managerId=$managerId;
+				$active=$active;
+				$isManager=$isManager;
+				$isGuru=$isGuru;
+				$notes= $usercsvtext[$i][5];
+				$PBCguruId=$PBCguruId;	
+			}
+			//Insert Shipping info into a new table entry, get the generated shippingId out of it.
+			$sql = "INSERT INTO `shipping` (shippingDescript, companyId, ShippingName1, shippingname2, addr1, addr2, city, state, zip) VALUES (:shippingDescript, :companyId, :ShippingName1, :shippingname2, :addr1, :addr2, :city, :state, :zip)";
+				try {
+					$dbh = new PDO("mysql:host=$dbhost;dbname=$dbname", $dbuser, $dbpass);	
+					$dbh->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+					$dbh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+					$stmt = $dbh->prepare($sql);
+					$stmt->bindParam("shippingDescript", $shippingDescript);
+					$stmt->bindParam("companyId", $companyId);
+					$stmt->bindParam("ShippingName1", $ShippingName1);
+					$stmt->bindParam("shippingname2", $shippingname2);
+					$stmt->bindParam("addr1", $addr1);
+					$stmt->bindParam("addr2", $addr2);
+					$stmt->bindParam("city", $city);
+					$stmt->bindParam("state", $state);
+					$stmt->bindParam("zip", $zip);
+					$stmt->execute(); 
+					$dbh = null;
+				} catch(PDOException $e) {
+					$pageContent= $e->getMessage(); 
+					echo $pageContent;
+				} 
+				
+		//Get the shipping ID just entered to use in user insert query
+		$sql = "SELECT * FROM shipping WHERE shippingDescript= :shippingDescript AND addr1= :addr1 AND addr2= :addr2 AND zip= :zip";
+			try {
+				$dbh = new PDO("mysql:host=$dbhost;dbname=$dbname", $dbuser, $dbpass);	
+				$dbh->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+				$dbh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+				$stmt = $dbh->prepare($sql);
+				$stmt->bindParam("shippingDescript", $shippingDescript);
+				$stmt->bindParam("addr1", $addr1);
+				$stmt->bindParam("addr2", $addr2);
+				$stmt->bindParam("zip", $zip);
+				$stmt->execute(); 
+				$data = $stmt->fetchALL(PDO::FETCH_ASSOC);
+				$dbh = null;
+			} catch(PDOException $e) {
+				$pageContent= $e->getMessage(); 
+				echo $pageContent;
+			}
+		
+		//Create a variable for shippingId	
+		
+		$shippingId=$data[0]['shippingId'];
+						
+		//Insert Users Query
+			
+			$sql = "INSERT INTO `user` (email, hash, firstName, lastName, companyId, groupId, shippingId, planId, billingId, managerId, active, isManager, isGuru, notes, PBCguruId) VALUES (:email, :hash, :firstName, :lastName, :companyId, :groupId, :shippingId, :planId, :billingId, :managerId, :active, :isManager, :isGuru, :notes, :PBCguruId)";
+			try {
+				$dbh = new PDO("mysql:host=$dbhost;dbname=$dbname", $dbuser, $dbpass);	
+				$dbh->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+				$dbh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+				$stmt = $dbh->prepare($sql);
+				$stmt->bindParam("email", $email);
+				$stmt->bindParam("hash", $hash);
+				$stmt->bindParam("firstName", $firstName);
+				$stmt->bindParam("lastName", $lastName);
+				$stmt->bindParam("companyId", $companyId);
+				$stmt->bindParam("groupId", $groupId);
+				$stmt->bindParam("shippingId", $shippingId);
+				$stmt->bindParam("planId", $planId);
+				$stmt->bindParam("billingId", $billingId);
+				$stmt->bindParam("managerId", $managerId);
+				$stmt->bindParam("active", $active);
+				$stmt->bindParam("isManager", $isManager);
+				$stmt->bindParam("isGuru", $isGuru);
+				$stmt->bindParam("notes", $notes);
+				$stmt->bindParam("PBCguruId", $PBCguruId);
+				$stmt->execute(); 
+				$dbh = null;
+			} catch(PDOException $e) {
+				$pageContent= $e->getMessage(); 
+				echo $pageContent;
+			}
+
+}
+
+//if query is successful, return to main admin page. Database Transactions aren't yet included in this version
+if ($sql==TRUE) {
+	header("Location: $page/tools");
+} // close $sql==true if
+else { //What happens if sql!= true
+
+//Displays an error message
+echo 
+'<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />	
+	<title>Admin Tools</title>
+
+	<!-- Set the viewport width to device width for mobile -->
+  	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		';
+include $link.'components/links.php';
+echo'
+</head>
+<body>
+  <div class="padding">
+  	<h2>Error</h2>
+	</div>';
+include $link.'components/footer.php';
+echo'
+</body>
+</html>';
+} //end $sql!=true else
+} //end if form is being handled
+else { //start form not being handled code
+
+//Form takes in uniform information through drop downs, and particular information as csv text in a text area.
+
+echo 
+'<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />	
+	<title>Admin Tools</title>
+
+	<!-- Set the viewport width to device width for mobile -->
+  	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		';
+
+//includes css and styling information
+include $link.'components/links.php';
+echo'
+</head>
+<body>
+  <div class="padding">
+    <h2 aligh="center">Users Upload</h2>
+	<a href="../">Go Back to Tools</a> 
+	<br /><br />
+    <p>This page allows you to upload a new billing account for PBC Guru:<br />
+	To upload users:</p> 
+	<ol>
+		<li>Select the Company and Group name from the dropdowns below</li>
+		<li>Ensure that their information has been correctly entered into the proper PBC Guru User information excel form. If you are unfamiliar with these forms, please read these <a href="'.$page.'/tools/guides/userexcel/">instructions</a></li>
+		<li>Make sure form is saved as a CSV file</li>
+		<li>Open form in Wordpad</li>
+		<li>Copy all text from document and past into text field below.</li>
+		<li>Click Submit</li>
+		<li>Fix any errors Identified on the next page</li>
+	</ol>
+	<br />
+	
+    <p>Enter user details below:</p>
+    <br />
+    <form id="createUsers" name="createUsers" method="POST" action="">
+      <h2>Select Company</h2>
+	  <p>
+	  <select name="companyId" id="insert">';
+//Query for arranging the client companies the users may work for as a dropdown. All users inputted in a single use must be from the same company and group.
+function companyquery ()
+{
+	include '../../config.php';
+		$sql = "SELECT * FROM company";
+		try {
+			$dbh = new PDO("mysql:host=$dbhost;dbname=$dbname", $dbuser, $dbpass);	
+			$dbh->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+			$dbh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+			$stmt = $dbh->prepare($sql);
+			$stmt->execute(); 
+			$data = $stmt->fetchALL(PDO::FETCH_ASSOC);
+			$dbh = null;
+		} catch(PDOException $e) {
+			$pageContent= $e->getMessage(); 
+			echo $pageContent;
+		}
+	
+	$functionOutput = "";	
+	for($i=0; $i <= count($data)-1; $i++) {
+		$companyId = $data[$i]['companyId'];
+	 $companyName = $data[$i]['companyName'];
+	 $functionOutput .= '<option value="'.$companyId.'">'.$companyName.'</option>';
+	}
+    
+	return $functionOutput;
+}
+
+echo companyquery();
+echo'  <option value="NULL">None</option>
+		</select> 
+		<br/>
+		<br/>';
+
+//Select form and Query for group within the company selection. Client companies each have groups of users who use our service.
+//Only use this form to add all the users within a single group
+
+echo'
+	<h2>Select Group</h2>
+	  <select name="groupId" id="insert">';
+function groupquery ()
+{
+	include '../../config.php';
+		$sql = "SELECT * FROM groups";
+		try {
+			$dbh = new PDO("mysql:host=$dbhost;dbname=$dbname", $dbuser, $dbpass);	
+			$dbh->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+			$dbh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+			$stmt = $dbh->prepare($sql);
+			$stmt->execute(); 
+			$data = $stmt->fetchALL(PDO::FETCH_ASSOC);
+			$dbh = null;
+		} catch(PDOException $e) {
+			$pageContent= $e->getMessage(); 
+			echo $pageContent;
+		}
+	
+	$functionOutput = "";	
+	for($i=0; $i <= count($data)-1; $i++) {
+		$groupId = $data[$i]['groupId'];
+	 $groupName = $data[$i]['groupName'];
+	 $functionOutput .= '<option value="'.$groupId.'">'.$groupName.'</option>';
+	}
+    
+	return $functionOutput;
+}
+
+echo groupquery();
+echo'  <option value="NULL">None</option>
+		</select> 
+		<br/>
+		<br/>';
+
+//PlanId selection query. How many books a group gets a year, as selected by the client company's management.
+echo'
+<h2>Select Plan</h2>
+ <select name="planId" id="insert">';
+function planquery ()
+{
+	include '../../config.php';
+		$sql = "SELECT * FROM `plan`";
+		try {
+			$dbh = new PDO("mysql:host=$dbhost;dbname=$dbname", $dbuser, $dbpass);	
+			$dbh->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+			$dbh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+			$stmt = $dbh->prepare($sql);
+			$stmt->execute(); 
+			$data = $stmt->fetchALL(PDO::FETCH_ASSOC);
+			$dbh = null;
+		} catch(PDOException $e) {
+			$pageContent= $e->getMessage(); 
+			echo $pageContent;
+		}
+	
+	$functionOutput = "";	
+	for($i=0; $i <= count($data)-1; $i++) {
+		$planId = $data[$i]['planId'];
+	 $planNameDetail = $data[$i]['planNameDetail'];
+	 $functionOutput .= '<option value="'.$planId.'">'.$planNameDetail.'</option>';
+	}
+    
+	return $functionOutput;
+}
+
+echo planquery();
+echo'  <option value="NULL">None</option>
+		</select> 
+		<br/>
+		<br/>';
+
+
+//billingId selection query. Who gets billed for the service given to this user and how we contact them.
+echo'
+<h2>Select Billing ID</h2>
+ <select name="billingId" id="insert">';
+function billingquery ()
+{
+	include '../../config.php';
+		$sql = "SELECT * FROM `billing`";
+		try {
+			$dbh = new PDO("mysql:host=$dbhost;dbname=$dbname", $dbuser, $dbpass);	
+			$dbh->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+			$dbh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+			$stmt = $dbh->prepare($sql);
+			$stmt->execute(); 
+			$data = $stmt->fetchALL(PDO::FETCH_ASSOC);
+			$dbh = null;
+		} catch(PDOException $e) {
+			$pageContent= $e->getMessage(); 
+			echo $pageContent;
+		}
+	
+	$functionOutput = "";	
+	for($i=0; $i <= count($data)-1; $i++) {
+		$billingId = $data[$i]['billingId'];
+	 $billingGroupName = $data[$i]['billingGroupName'];
+	 $functionOutput .= '<option value="'.$billingId.'">'.$billingGroupName.'</option>';
+	}
+    
+	return $functionOutput;
+}
+
+echo billingquery();
+echo'  <option value="NULL">None</option>
+		</select> 
+		<br/>
+		<br/>';
+		
+//A non-zero isManager number identifies a user as a manager. Their userId is their identification number.
+//This means that the managerId number in a user's row will correspond with the userId number in that manager's own row.
+//The following select form and function select all managers from the users table and allow you to assign their userId to the managerId of other users.
+#The query needs to be limited to those people who are within the company. 
+echo'
+<h2>Select Manager</h2>
+ <select name="managerId" id="insert">';
+function managerquery ()
+{
+	include '../../config.php';
+		$sql = "SELECT * FROM `user` WHERE `isManager` !=0";
+		try {
+			$dbh = new PDO("mysql:host=$dbhost;dbname=$dbname", $dbuser, $dbpass);	
+			$dbh->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+			$dbh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+			$stmt = $dbh->prepare($sql);
+			$stmt->execute(); 
+			$data = $stmt->fetchALL(PDO::FETCH_ASSOC);
+			$dbh = null;
+		} catch(PDOException $e) {
+			$pageContent= $e->getMessage(); 
+			echo $pageContent;
+		}
+	
+	$functionOutput = "";	
+	for($i=0; $i <= count($data)-1; $i++) {
+		$managerId = $data[$i]['userId'];
+	 $firstName = $data[$i]['firstName'];
+	 $lastName = $data[$i]['lastName'];
+	 $functionOutput .= '<option value="'.$userId.'">'.$lastName.', '.$firstName.'</option>';
+	}
+    
+	return $functionOutput;
+}
+
+echo managerquery();
+echo'  <option value="NULL">None</option>
+		</select> 
+		<br/>
+		<br/>';
+		
+//The following identifies the Guru who will provide services for the group of users being entered. 
+echo'
+<h2>Select Guru</h2>
+ <select name="PBCguruId" id="insert">';
+function PBCguruquery ()
+{
+	include '../../config.php';
+		$sql = "SELECT * FROM user WHERE isGuru<>0";
+		try {
+			$dbh = new PDO("mysql:host=$dbhost;dbname=$dbname", $dbuser, $dbpass);	
+			$dbh->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+			$dbh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+			$stmt = $dbh->prepare($sql);
+			$stmt->execute(); 
+			$data = $stmt->fetchALL(PDO::FETCH_ASSOC);
+			$dbh = null;
+		} catch(PDOException $e) {
+			$pageContent= $e->getMessage(); 
+			echo $pageContent;
+		}
+	
+	$functionOutput = "";	
+	for($i=0; $i <= count($data)-1; $i++) {
+		$PBCguruId = $data[$i]['userId'];
+	 $firstName = $data[$i]['firstName'];
+	 $lastName = $data[$i]['lastName'];
+	 $functionOutput .= '<option value="'.$PBCguruId.'">'.$lastName.', '.$firstName.'</option>';
+	}
+    
+	return $functionOutput;
+}
+
+echo PBCguruquery();
+echo'  <option value="NULL">None</option>
+		</select> 
+		<br/>
+		<br/>
+		
+        <p>User CSV document text:</p>      
+		 <br />
+	   <textarea name="usercsvtext" id="usercsvtext" rows="25" cols="100"></textarea>
+
+        <input type="submit" />
+        <input type="hidden" name="insert" id="insert" value="createUsers"/>
+      </p>
+      </form>
+  </div> 
+  </div>
+</div>
+</body>
+</html>';
+} //end else-form entry option.
+?>
